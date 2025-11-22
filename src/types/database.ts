@@ -3,8 +3,9 @@ export type ZoneControlRow = {
   zone_id: string;
   voter_counts: Record<string, number> | null;
   majority_owner: string | null;
-  coalition: Record<string, unknown> | null;
+  coalition: { players: string[]; split: Record<string, number> } | null;
   gerrymander_uses: number;
+  volatile_slots?: { slot: number; player_id: string }[] | null;
   updated_at: string;
 };
 
@@ -68,6 +69,13 @@ export type ConspiracyCardRow = {
   title: string;
   cost: number;
   description: string;
+};
+
+export type HeadlineCardRow = {
+  id: string;
+  title: string;
+  effect: string;
+  sentiment: 'positive' | 'negative' | 'neutral';
 };
 
 export type DeckType = 'ideology' | 'vote_bank' | 'conspiracy' | 'headline';

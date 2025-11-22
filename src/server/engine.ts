@@ -3,6 +3,8 @@
 import { addResourceBundles, subtractResourceBundle } from '@/lib/rules';
 import type { ResourceBundle } from '@/lib/rules';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { drawDeckCards, peekDeckCards } from '@/server/decks';
+import type { HeadlineCardRow } from '@/types/database';
 
 interface IdeologyAnswerInput {
   sessionId: string;
@@ -103,7 +105,7 @@ export async function influenceVoters({
 
   const { data: zoneControlRow } = await supabase
     .from('zone_control')
-    .select('voter_counts, majority_owner, gerrymander_uses')
+    .select('voter_counts, majority_owner, gerrymander_uses, volatile_slots')
     .match({ session_id: sessionId, zone_id: zoneId })
     .maybeSingle();
 
@@ -112,6 +114,16 @@ export async function influenceVoters({
 
   const hasMajority = voterCounts[playerId] >= zoneMeta.majority_required;
   const isNewMajority = hasMajority && zoneControlRow?.majority_owner !== playerId;
+
+  const {
+    updatedVolatileSlots,
+    headlineTriggered,
+  } = fillVolatileSlots({
+    maxSlots: zoneMeta.volatile_slots ?? 0,
+    existing: (zoneControlRow?.volatile_slots as VolatileSlot[] | undefined) ?? [],
+    cardVoters: card.voters,
+    playerId,
+  });
 
   const { error: upsertError } = await supabase.from('zone_control').upsert(
     {
@@ -122,6 +134,7 @@ export async function influenceVoters({
       gerrymander_uses: hasMajority
         ? Math.max(1, zoneControlRow?.gerrymander_uses ?? 1)
         : zoneControlRow?.gerrymander_uses ?? 0,
+      volatile_slots: updatedVolatileSlots,
     },
     {
       onConflict: 'session_id,zone_id',
@@ -145,11 +158,16 @@ export async function influenceVoters({
     },
   });
 
+  if (headlineTriggered) {
+    await triggerHeadline(sessionId, playerId);
+  }
+
   return {
     resources: updatedResources,
     voterCounts,
     majorityOwner: hasMajority ? playerId : zoneControlRow?.majority_owner ?? null,
     majorityClaimed: isNewMajority,
+    headlineTriggered,
   };
 }
 
@@ -161,5 +179,59 @@ function normalizeVoterCounts(
     acc[key] = typeof value === 'number' ? value : 0;
     return acc;
   }, {});
+}
+
+type VolatileSlot = { slot: number; player_id: string };
+
+function fillVolatileSlots({
+  maxSlots,
+  existing,
+  cardVoters,
+  playerId,
+}: {
+  maxSlots: number;
+  existing: VolatileSlot[];
+  cardVoters: number;
+  playerId: string;
+}) {
+  if (maxSlots <= 0) return { updatedVolatileSlots: existing, headlineTriggered: false };
+
+  const filled = [...existing];
+  let available = maxSlots - filled.length;
+  let votersRemaining = cardVoters;
+  let triggered = false;
+
+  while (available > 0 && votersRemaining > 0) {
+    const nextSlotIndex = maxSlots - available;
+    filled.push({ slot: nextSlotIndex, player_id: playerId });
+    available -= 1;
+    votersRemaining -= 1;
+    triggered = true;
+  }
+
+  return { updatedVolatileSlots: filled, headlineTriggered: triggered };
+}
+
+export async function triggerHeadline(sessionId: string, playerId: string) {
+  const supabase = createServerSupabaseClient();
+  const [headline] = await peekDeckCards<HeadlineCardRow>(sessionId, 'headline', 1);
+  if (!headline) return null;
+
+  await drawDeckCards(sessionId, 'headline', 1);
+
+  await supabase.from('actions').insert({
+    session_id: sessionId,
+    turn_id: null,
+    actor_id: playerId,
+    action_type: 'HEADLINE_TRIGGERED',
+    payload: {
+      headline_id: headline.id,
+      title: headline.title,
+      effect: headline.effect,
+      sentiment: headline.sentiment,
+    },
+  });
+
+  return headline;
 }
 

@@ -37,6 +37,11 @@ export function GameBoard({ zoneControl, zones }: GameBoardProps) {
               <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                 Majority owner: {zone.majority_owner ?? 'Unclaimed'}
               </p>
+              {zoneMeta && zoneMeta.volatile_slots > 0 ? (
+                <p className="text-xs text-zinc-500">
+                  Volatile: {(zone.volatile_slots?.length ?? 0)}/{zoneMeta.volatile_slots}
+                </p>
+              ) : null}
               <ul className="mt-3 space-y-1 text-sm">
                 {Object.entries(voters).map(([playerId, count]) => (
                   <li key={playerId} className="flex items-center justify-between text-zinc-800 dark:text-zinc-200">
