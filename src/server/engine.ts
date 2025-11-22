@@ -113,6 +113,11 @@ export async function influenceVoters({
   voterCounts[playerId] = (voterCounts[playerId] ?? 0) + card.voters;
 
   const hasMajority = voterCounts[playerId] >= zoneMeta.majority_required;
+  const coalitionEligible =
+    voterCounts[playerId] < zoneMeta.majority_required &&
+    zoneControlRow?.majority_owner &&
+    zoneControlRow.majority_owner !== playerId &&
+    (voterCounts[playerId] ?? 0) + (voterCounts[zoneControlRow.majority_owner] ?? 0) >= zoneMeta.majority_required;
   const isNewMajority = hasMajority && zoneControlRow?.majority_owner !== playerId;
 
   const {
@@ -131,6 +136,15 @@ export async function influenceVoters({
       zone_id: zoneId,
       voter_counts: voterCounts,
       majority_owner: hasMajority ? playerId : zoneControlRow?.majority_owner ?? null,
+      coalition: coalitionEligible
+        ? {
+            players: [playerId, zoneControlRow?.majority_owner].filter(Boolean),
+            split: {
+              [playerId]: voterCounts[playerId],
+              [zoneControlRow?.majority_owner ?? '']: voterCounts[zoneControlRow?.majority_owner ?? ''] ?? 0,
+            },
+          }
+        : zoneControlRow?.coalition ?? null,
       gerrymander_uses: hasMajority
         ? Math.max(1, zoneControlRow?.gerrymander_uses ?? 1)
         : zoneControlRow?.gerrymander_uses ?? 0,
@@ -167,6 +181,7 @@ export async function influenceVoters({
     voterCounts,
     majorityOwner: hasMajority ? playerId : zoneControlRow?.majority_owner ?? null,
     majorityClaimed: isNewMajority,
+    coalitionFormed: coalitionEligible,
     headlineTriggered,
   };
 }
@@ -233,5 +248,30 @@ export async function triggerHeadline(sessionId: string, playerId: string) {
   });
 
   return headline;
+}
+
+export async function formCoalition(sessionId: string, zoneId: string, playerA: string, playerB: string) {
+  const supabase = createServerSupabaseClient();
+  const { data: zone } = await supabase
+    .from('zone_control')
+    .select('voter_counts')
+    .match({ session_id: sessionId, zone_id: zoneId })
+    .single();
+
+  if (!zone?.voter_counts) {
+    throw new Error('Zone state missing.');
+  }
+
+  const split = {
+    [playerA]: zone.voter_counts[playerA] ?? 0,
+    [playerB]: zone.voter_counts[playerB] ?? 0,
+  };
+
+  await supabase
+    .from('zone_control')
+    .update({
+      coalition: { players: [playerA, playerB], split },
+    })
+    .match({ session_id: sessionId, zone_id: zoneId });
 }
 

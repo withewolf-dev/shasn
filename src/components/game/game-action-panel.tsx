@@ -9,6 +9,7 @@ import {
   submitInfluenceAction,
   buyConspiracyCard,
   playConspiracyCard,
+  formCoalitionAction,
 } from '@/server/game-actions';
 
 interface GameActionPanelProps {

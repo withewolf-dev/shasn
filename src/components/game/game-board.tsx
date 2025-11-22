@@ -37,6 +37,11 @@ export function GameBoard({ zoneControl, zones }: GameBoardProps) {
               <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                 Majority owner: {zone.majority_owner ?? 'Unclaimed'}
               </p>
+              {zone.coalition ? (
+                <p className="text-xs text-amber-600 dark:text-amber-300">
+                  Coalition: {zone.coalition.players.map((id) => id.slice(0, 4)).join(' + ')}
+                </p>
+              ) : null}
               {zoneMeta && zoneMeta.volatile_slots > 0 ? (
                 <p className="text-xs text-zinc-500">
                   Volatile: {(zone.volatile_slots?.length ?? 0)}/{zoneMeta.volatile_slots}
