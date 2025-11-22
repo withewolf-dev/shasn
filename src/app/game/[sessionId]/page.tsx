@@ -2,6 +2,13 @@ import { notFound, redirect } from 'next/navigation';
 
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { GameRealtimeContainer } from '@/components/game/game-realtime-container';
+import { ensureSessionDecks, peekDeckCards } from '@/server/decks';
+import type {
+  ConspiracyCardRow,
+  IdeologyCardRow,
+  VoteBankCardRow,
+  ZoneRow,
+} from '@/types/database';
 
 interface GamePageProps {
   params: { sessionId: string };
@@ -19,9 +26,6 @@ export default async function GamePage({ params }: GamePageProps) {
     { data: players },
     { data: zoneControl },
     { data: activeTurn },
-    { data: zones },
-    { data: ideologyCards },
-    { data: voteBankCards },
   ] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from('sessions').select('*').eq('id', sessionId).single(),
@@ -33,6 +37,7 @@ export default async function GamePage({ params }: GamePageProps) {
         seat_order,
         is_ready,
         resources,
+        conspiracy_hand,
         profiles (
           display_name,
           avatar_seed
@@ -49,9 +54,6 @@ export default async function GamePage({ params }: GamePageProps) {
       .order('turn_index', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase.from('zones').select('*'),
-    supabase.from('ideology_cards').select('*').limit(10),
-    supabase.from('vote_bank_cards').select('*').limit(10),
   ]);
 
   if (!user) {
@@ -65,6 +67,24 @@ export default async function GamePage({ params }: GamePageProps) {
     throw sessionError;
   }
 
+  await ensureSessionDecks(sessionId);
+  const [zones, ideologyCards, voteBankCards, conspiracyCards, logEvents] = await Promise.all([
+    supabase
+      .from('zones')
+      .select('*')
+      .then((res) => (res.data as ZoneRow[]) ?? []),
+    peekDeckCards<IdeologyCardRow>(sessionId, 'ideology', 1),
+    peekDeckCards<VoteBankCardRow>(sessionId, 'vote_bank', 3),
+    peekDeckCards<ConspiracyCardRow>(sessionId, 'conspiracy', 1),
+    supabase
+      .from('actions')
+      .select('id, action_type, payload, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(25)
+      .then((res) => res.data ?? []),
+  ]);
+
   return (
     <GameRealtimeContainer
       sessionId={sessionId}
@@ -72,9 +92,11 @@ export default async function GamePage({ params }: GamePageProps) {
       initialPlayers={players ?? []}
       initialZoneControl={zoneControl ?? []}
       initialTurn={activeTurn}
-      zones={zones ?? []}
-      ideologyCards={ideologyCards ?? []}
-      voteBankCards={voteBankCards ?? []}
+      zones={zones}
+      ideologyCards={ideologyCards}
+      voteBankCards={voteBankCards}
+      conspiracyCards={conspiracyCards}
+      initialLog={logEvents}
     />
   );
 }

@@ -111,6 +111,7 @@ export async function influenceVoters({
   voterCounts[playerId] = (voterCounts[playerId] ?? 0) + card.voters;
 
   const hasMajority = voterCounts[playerId] >= zoneMeta.majority_required;
+  const isNewMajority = hasMajority && zoneControlRow?.majority_owner !== playerId;
 
   const { error: upsertError } = await supabase.from('zone_control').upsert(
     {
@@ -148,6 +149,7 @@ export async function influenceVoters({
     resources: updatedResources,
     voterCounts,
     majorityOwner: hasMajority ? playerId : zoneControlRow?.majority_owner ?? null,
+    majorityClaimed: isNewMajority,
   };
 }
 

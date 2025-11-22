@@ -14,6 +14,7 @@ export type SessionPlayerRow = {
   seat_order: number;
   is_ready: boolean;
   resources: Record<string, number> | null;
+  conspiracy_hand?: string[];
   profiles?: {
     display_name: string | null;
     avatar_seed: string | null;
@@ -60,5 +61,22 @@ export type VoteBankCardRow = {
   voters: number;
   cost: Record<string, number>;
   marked_cost: string | null;
+};
+
+export type ConspiracyCardRow = {
+  id: string;
+  title: string;
+  cost: number;
+  description: string;
+};
+
+export type DeckType = 'ideology' | 'vote_bank' | 'conspiracy' | 'headline';
+
+export type SessionDeckRow = {
+  session_id: string;
+  deck_type: DeckType;
+  cards: string[];
+  discard: string[];
+  updated_at: string;
 };
 

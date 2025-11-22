@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import type {
+  ConspiracyCardRow,
   IdeologyCardRow,
   SessionPlayerRow,
   TurnRow,
@@ -14,6 +15,7 @@ import type {
 import { GameBoard } from '@/components/game/game-board';
 import { GameActionPanel } from '@/components/game/game-action-panel';
 import { GameSidebar } from '@/components/game/game-sidebar';
+import { GameLog } from '@/components/game/game-log';
 
 interface GameRealtimeContainerProps {
   sessionId: string;
@@ -24,6 +26,8 @@ interface GameRealtimeContainerProps {
   zones: ZoneRow[];
   ideologyCards: IdeologyCardRow[];
   voteBankCards: VoteBankCardRow[];
+  conspiracyCards: ConspiracyCardRow[];
+  initialLog: { id: number; action_type: string; payload: Record<string, unknown>; created_at: string }[];
 }
 
 export function GameRealtimeContainer({
@@ -35,10 +39,13 @@ export function GameRealtimeContainer({
   zones,
   ideologyCards,
   voteBankCards,
+  conspiracyCards,
+  initialLog,
 }: GameRealtimeContainerProps) {
   const [players, setPlayers] = useState(initialPlayers);
   const [zoneControl, setZoneControl] = useState(initialZoneControl);
   const [activeTurn, setActiveTurn] = useState<TurnRow | null>(initialTurn);
+  const [logEvents, setLogEvents] = useState(initialLog);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -91,6 +98,13 @@ export function GameRealtimeContainer({
             !prev || updated.turn_index >= prev.turn_index ? updated : prev,
           );
         },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'actions', filter: `session_id=eq.${sessionId}` },
+        (payload) => {
+          setLogEvents((prev) => [payload.new as GameLogEvent, ...prev.slice(0, 24)]);
+        },
       );
 
     return () => {
@@ -100,8 +114,10 @@ export function GameRealtimeContainer({
 
   const sortedPlayers = useMemo(() => players.slice().sort((a, b) => a.seat_order - b.seat_order), [players]);
 
+  const currentPlayer = sortedPlayers.find((player) => player.profile_id === currentUserId);
+
   return (
-    <main className="grid min-h-screen gap-6 px-6 py-6 lg:grid-cols-[2fr_1fr]">
+    <main className="grid min-h-screen gap-6 px-6 py-6 lg:grid-cols-[3fr_1.2fr]">
       <div className="space-y-6">
         <GameBoard zoneControl={zoneControl} zones={zones} />
         <GameActionPanel
@@ -110,8 +126,11 @@ export function GameRealtimeContainer({
           activeTurn={activeTurn}
           ideologyCards={ideologyCards}
           voteBankCards={voteBankCards}
+          conspiracyCards={conspiracyCards}
+          currentHand={currentPlayer?.conspiracy_hand ?? []}
           zones={zones}
         />
+        <GameLog sessionId={sessionId} initialEvents={logEvents} />
       </div>
       <GameSidebar
         sessionId={sessionId}
@@ -121,5 +140,12 @@ export function GameRealtimeContainer({
       />
     </main>
   );
+}
+
+interface GameLogEvent {
+  id: number;
+  action_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
 }
 

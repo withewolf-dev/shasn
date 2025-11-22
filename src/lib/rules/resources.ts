@@ -55,3 +55,31 @@ export function subtractResourceBundle(base: ResourceBundle, cost: ResourceBundl
   }, { ...normalizedBase });
 }
 
+export function totalResources(bundle?: ResourceBundle | null): number {
+  if (!bundle) return 0;
+  return Object.values(bundle).reduce((sum, value) => sum + (value ?? 0), 0);
+}
+
+export function spendGenericResources(base: ResourceBundle, amount: number): ResourceBundle {
+  const normalized = normalizeResourceBundle(base);
+  let remaining = amount;
+
+  const resourceOrder: ResourceType[] = ['funds', 'media', 'clout', 'trust'];
+  const updated: ResourceBundle = { ...normalized };
+
+  for (const type of resourceOrder) {
+    if (remaining <= 0) break;
+    const available = updated[type] ?? 0;
+    if (available <= 0) continue;
+    const spend = Math.min(available, remaining);
+    updated[type] = available - spend;
+    remaining -= spend;
+  }
+
+  if (remaining > 0) {
+    throw new Error('Insufficient resources to cover cost.');
+  }
+
+  return updated;
+}
+
