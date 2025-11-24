@@ -4,11 +4,11 @@ import { ReadyToggle } from '@/components/lobby/ready-toggle';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 interface LobbyPageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;
 }
 
 export default async function LobbyPage({ params }: LobbyPageProps) {
-  const sessionId = params.sessionId;
+  const { sessionId } = await params;
 
   try {
     const supabase = createServerSupabaseClient();
@@ -63,7 +63,7 @@ export default async function LobbyPage({ params }: LobbyPageProps) {
     }
 
     const hostDisplayName =
-      players?.find((player) => player.profile_id === session?.host_id)?.profiles?.display_name ??
+      players?.find((player) => player.profile_id === session?.host_id)?.profiles?.[0]?.display_name ??
       'Host';
 
     return (
@@ -87,7 +87,7 @@ export default async function LobbyPage({ params }: LobbyPageProps) {
           <ul className="divide-y divide-zinc-100 text-sm dark:divide-zinc-800">
             {players?.map((player) => {
               const isViewer = player.profile_id === user?.id;
-              const name = player.profiles?.display_name ?? `Player ${player.seat_order + 1}`;
+              const name = player.profiles?.[0]?.display_name ?? `Player ${player.seat_order + 1}`;
 
               return (
                 <li key={player.profile_id} className="flex items-center justify-between py-3">
@@ -118,6 +118,9 @@ export default async function LobbyPage({ params }: LobbyPageProps) {
       </main>
     );
   } catch (error) {
+    // Log the real error so we don't just see the generic "Configure Supabase credentials" message
+    console.error('Failed to load lobby', error);
+
     const message =
       error instanceof Error ? error.message : 'Unable to load lobby. Configure Supabase credentials.';
 

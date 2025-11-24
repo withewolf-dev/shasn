@@ -6,9 +6,10 @@ import { redirect } from 'next/navigation';
 
 import { createServerSupabaseClient } from '@/lib/supabase';
 
-function getSiteUrl(path = '/auth/callback') {
+async function getSiteUrl(path = '/auth/callback') {
+  const headerList = await headers();
   const origin =
-    headers().get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+    headerList.get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
   return `${origin.replace(/\/$/, '')}${path}`;
 }
 
@@ -18,7 +19,7 @@ export async function requestMagicLink(email: string) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: getSiteUrl('/auth/callback'),
+      emailRedirectTo: await getSiteUrl('/auth/callback'),
     },
   });
 
