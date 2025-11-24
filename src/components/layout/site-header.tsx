@@ -17,7 +17,7 @@ export function SiteHeader({ profileName, userEmail }: SiteHeaderProps) {
           <Link href="/" className="text-base font-semibold text-zinc-900 dark:text-white">
             SHASN
           </Link>
-          <Link className="transition hover:text-zinc-900 dark:hover:text-white" href="/lobby/demo">
+          <Link className="transition hover:text-zinc-900 dark:hover:text-white" href="/lobbies">
             Lobbies
           </Link>
           <Link className="transition hover:text-zinc-900 dark:hover:text-white" href="/rules">
