@@ -6,6 +6,7 @@ import { ensureSessionDecks, peekDeckCards } from '@/server/decks';
 import type {
   ConspiracyCardRow,
   IdeologyCardRow,
+  SessionPlayerRow,
   VoteBankCardRow,
   ZoneRow,
 } from '@/types/database';
@@ -23,7 +24,7 @@ export default async function GamePage({ params }: GamePageProps) {
       data: { user },
     },
     { data: session, error: sessionError },
-    { data: players },
+    { data: playersData },
     { data: zoneControl },
     { data: activeTurn },
   ] = await Promise.all([
@@ -33,6 +34,7 @@ export default async function GamePage({ params }: GamePageProps) {
       .from('session_players')
       .select(
         `
+        session_id,
         profile_id,
         seat_order,
         is_ready,
@@ -89,12 +91,14 @@ export default async function GamePage({ params }: GamePageProps) {
       .then((res) => res.data ?? []),
   ]);
 
+  const initialPlayers = (playersData as unknown as SessionPlayerRow[]) ?? [];
+
   return (
     <GameRealtimeContainer
       sessionId={sessionId}
       currentUserId={user.id}
       hostId={session.host_id}
-      initialPlayers={players ?? []}
+      initialPlayers={initialPlayers}
       initialZoneControl={zoneControl ?? []}
       initialTurn={activeTurn}
       zones={zones}
