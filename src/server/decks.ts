@@ -1,5 +1,6 @@
 'use server';
 
+import { CONSPIRACY_EFFECTS } from '@/lib/rules';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import type { DeckType, SessionDeckRow } from '@/types/database';
 
@@ -89,7 +90,11 @@ async function fetchCardIds(deckType: DeckType) {
   const source = DECK_SOURCES[deckType];
   const { data, error } = await supabase.from(source.table).select('id');
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => row.id);
+  let ids = (data ?? []).map((row) => row.id);
+  if (deckType === 'conspiracy') {
+    ids = ids.filter((id) => CONSPIRACY_EFFECTS[id]?.implemented);
+  }
+  return ids;
 }
 
 async function fetchCardRecords<TRecord>(deckType: DeckType, ids: string[]): Promise<TRecord[]> {

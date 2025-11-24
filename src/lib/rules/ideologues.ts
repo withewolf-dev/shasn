@@ -1,4 +1,39 @@
-import type { IdeologueDefinition } from './types';
+import type {
+  IdeologueDefinition,
+  IdeologueId,
+  ResourceBundle,
+  ResourceType,
+} from './types';
+
+export const IDEOLOGUE_PASSIVE_RESOURCES: Record<IdeologueId, ResourceType> = {
+  capitalist: 'funds',
+  showman: 'media',
+  supremo: 'clout',
+  idealist: 'trust',
+};
+
+export function computeIdeologuePassiveIncome(
+  state?: Record<string, number> | null,
+): ResourceBundle {
+  if (!state) return {};
+
+  return Object.entries(state).reduce<ResourceBundle>((acc, [rawId, rawCount]) => {
+    const ideologueId = rawId as IdeologueId;
+    const resource = IDEOLOGUE_PASSIVE_RESOURCES[ideologueId];
+    if (!resource) {
+      return acc;
+    }
+
+    const count = typeof rawCount === 'number' ? rawCount : Number(rawCount ?? 0);
+    const payout = Math.floor(count / 2);
+    if (payout <= 0) {
+      return acc;
+    }
+
+    acc[resource] = (acc[resource] ?? 0) + payout;
+    return acc;
+  }, {});
+}
 
 export const IDEOLOGUES: Record<IdeologueDefinition['id'], IdeologueDefinition> = {
   capitalist: {

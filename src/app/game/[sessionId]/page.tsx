@@ -22,7 +22,7 @@ export default async function GamePage({ params }: GamePageProps) {
     {
       data: { user },
     },
-    { error: sessionError },
+    { data: session, error: sessionError },
     { data: players },
     { data: zoneControl },
     { data: activeTurn },
@@ -41,7 +41,8 @@ export default async function GamePage({ params }: GamePageProps) {
         profiles (
           display_name,
           avatar_seed
-        )
+        ),
+        ideology_state
       `,
       )
       .eq('session_id', sessionId)
@@ -66,6 +67,9 @@ export default async function GamePage({ params }: GamePageProps) {
     }
     throw sessionError;
   }
+  if (!session) {
+    notFound();
+  }
 
   await ensureSessionDecks(sessionId);
   const [zones, ideologyCards, voteBankCards, conspiracyCards, logEvents] = await Promise.all([
@@ -75,7 +79,7 @@ export default async function GamePage({ params }: GamePageProps) {
       .then((res) => (res.data as ZoneRow[]) ?? []),
     peekDeckCards<IdeologyCardRow>(sessionId, 'ideology', 1),
     peekDeckCards<VoteBankCardRow>(sessionId, 'vote_bank', 3),
-    peekDeckCards<ConspiracyCardRow>(sessionId, 'conspiracy', 1),
+    peekDeckCards<ConspiracyCardRow>(sessionId, 'conspiracy', 3),
     supabase
       .from('actions')
       .select('id, action_type, payload, created_at')
@@ -89,6 +93,7 @@ export default async function GamePage({ params }: GamePageProps) {
     <GameRealtimeContainer
       sessionId={sessionId}
       currentUserId={user.id}
+      hostId={session.host_id}
       initialPlayers={players ?? []}
       initialZoneControl={zoneControl ?? []}
       initialTurn={activeTurn}

@@ -16,10 +16,12 @@ import { GameBoard } from '@/components/game/game-board';
 import { GameActionPanel } from '@/components/game/game-action-panel';
 import { GameSidebar } from '@/components/game/game-sidebar';
 import { GameLog } from '@/components/game/game-log';
+import { GameCoalitionPanel } from '@/components/game/game-coalition-panel';
 
 interface GameRealtimeContainerProps {
   sessionId: string;
   currentUserId: string;
+  hostId: string;
   initialPlayers: SessionPlayerRow[];
   initialZoneControl: ZoneControlRow[];
   initialTurn: TurnRow | null;
@@ -33,6 +35,7 @@ interface GameRealtimeContainerProps {
 export function GameRealtimeContainer({
   sessionId,
   currentUserId,
+  hostId,
   initialPlayers,
   initialZoneControl,
   initialTurn,
@@ -129,11 +132,19 @@ export function GameRealtimeContainer({
           conspiracyCards={conspiracyCards}
           currentHand={currentPlayer?.conspiracy_hand ?? []}
           zones={zones}
+          players={sortedPlayers}
+        />
+        <GameCoalitionPanel
+          sessionId={sessionId}
+          currentUserId={currentUserId}
+          zones={zoneControl}
+          players={sortedPlayers}
         />
         <GameLog sessionId={sessionId} initialEvents={logEvents} />
       </div>
       <GameSidebar
         sessionId={sessionId}
+          hostId={hostId}
         players={sortedPlayers}
         activeTurn={activeTurn}
         currentUserId={currentUserId}

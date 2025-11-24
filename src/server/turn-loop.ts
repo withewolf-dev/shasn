@@ -1,5 +1,11 @@
 'use server';
 
+import {
+  addResourceBundles,
+  clampResourceBundle,
+  computeIdeologuePassiveIncome,
+} from '@/lib/rules';
+import type { ResourceBundle } from '@/lib/rules';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { ensureSessionDecks, peekDeckCards } from '@/server/decks';
 
@@ -37,7 +43,90 @@ export async function startTurn(input: StartTurnInput) {
     payload: { turn_index: input.turnIndex },
   });
 
+  await grantIdeologuePassiveIncome({
+    supabase,
+    sessionId: input.sessionId,
+    playerId: input.activePlayerId,
+    turnId: turn.id,
+  });
+
   return turn;
+}
+
+async function grantIdeologuePassiveIncome({
+  supabase,
+  sessionId,
+  playerId,
+  turnId,
+}: {
+  supabase: ReturnType<typeof createServerSupabaseClient>;
+  sessionId: string;
+  playerId: string;
+  turnId: number;
+}) {
+  const { data: playerRow, error } = await supabase
+    .from('session_players')
+    .select('resources, ideology_state')
+    .match({ session_id: sessionId, profile_id: playerId })
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const passiveIncome = computeIdeologuePassiveIncome(
+    (playerRow.ideology_state as Record<string, number> | null) ?? {},
+  );
+
+  if (Object.keys(passiveIncome).length === 0) {
+    return;
+  }
+
+  const incrementedResources = addResourceBundles(playerRow.resources ?? {}, passiveIncome);
+  const { bundle: cappedResources, discarded, overflow } = clampResourceBundle(incrementedResources);
+  const appliedIncome = Object.entries(passiveIncome).reduce<Record<string, number>>(
+    (acc, [key, value]) => {
+      const typedKey = key as keyof ResourceBundle;
+      const discardedAmount = discarded[typedKey] ?? 0;
+      const applied = Math.max(0, (value ?? 0) - discardedAmount);
+      if (applied > 0) {
+        acc[typedKey] = applied;
+      }
+      return acc;
+    },
+    {},
+  );
+
+  await supabase
+    .from('session_players')
+    .update({ resources: cappedResources })
+    .match({ session_id: sessionId, profile_id: playerId });
+
+  await supabase.from('actions').insert({
+    session_id: sessionId,
+    turn_id: turnId,
+    actor_id: playerId,
+    action_type: 'IDEOLOGUE_PASSIVE_GAIN',
+    payload: {
+      passive_income: passiveIncome,
+      applied_income: appliedIncome,
+      discarded,
+    },
+  });
+
+  if (overflow > 0) {
+    await supabase.from('actions').insert({
+      session_id: sessionId,
+      turn_id: turnId,
+      actor_id: playerId,
+      action_type: 'RESOURCE_CAP_DISCARD',
+      payload: {
+        source: 'passive_income',
+        discarded,
+        overflow,
+      },
+    });
+  }
 }
 
 export interface CompleteTurnInput {
@@ -65,6 +154,11 @@ export async function completeTurn({ turnId, sessionId, actorId }: CompleteTurnI
     action_type: 'TURN_END',
     payload: {},
   });
+
+  await supabase
+    .from('session_players')
+    .update({ headline_flags: { skip_gerrymander: false } })
+    .match({ session_id: sessionId, profile_id: actorId });
 
   await startNextTurn(supabase, sessionId, turnId);
 }

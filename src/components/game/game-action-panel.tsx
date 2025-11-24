@@ -1,15 +1,20 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 
-import { RESOURCE_LABELS } from '@/lib/rules';
-import type { IdeologyCardRow, TurnRow, VoteBankCardRow, ZoneRow } from '@/types/database';
+import { RESOURCE_LABELS, getConspiracyEffectConfig } from '@/lib/rules';
+import type {
+  IdeologyCardRow,
+  SessionPlayerRow,
+  TurnRow,
+  VoteBankCardRow,
+  ZoneRow,
+} from '@/types/database';
 import {
   submitIdeologyAnswer,
   submitInfluenceAction,
   buyConspiracyCard,
   playConspiracyCard,
-  formCoalitionAction,
 } from '@/server/game-actions';
 
 interface GameActionPanelProps {
@@ -21,6 +26,7 @@ interface GameActionPanelProps {
   conspiracyCards: { id: string; title: string; cost: number; description: string }[];
   currentHand: string[];
   zones: ZoneRow[];
+  players: SessionPlayerRow[];
 }
 
 export function GameActionPanel({
@@ -32,6 +38,7 @@ export function GameActionPanel({
   conspiracyCards,
   currentHand,
   zones,
+  players,
 }: GameActionPanelProps) {
   const ideologyCard =
     (activeTurn?.state as { ideology_preview?: IdeologyCardRow[] } | null)?.ideology_preview?.[0] ??
@@ -41,7 +48,11 @@ export function GameActionPanel({
     (activeTurn?.state as { vote_bank_preview?: VoteBankCardRow[] } | null)?.vote_bank_preview?.[0] ??
     voteBankCards[0] ??
     null;
-  const conspiracyCard = conspiracyCards[0] ?? null;
+  const conspiracyCard = useMemo(
+    () =>
+      conspiracyCards.find((card) => getConspiracyEffectConfig(card.id)?.implemented) ?? null,
+    [conspiracyCards],
+  );
   const [choice, setChoice] = useState<'answer_a' | 'answer_b'>('answer_a');
   const [zoneId, setZoneId] = useState(zones[0]?.id ?? '');
   const [message, setMessage] = useState<string | null>(null);
@@ -109,6 +120,14 @@ export function GameActionPanel({
         )}
       </header>
 
+      <div className="rounded-2xl border border-dashed border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 dark:border-sky-400/40 dark:bg-sky-950/30 dark:text-sky-200">
+        <p className="font-semibold uppercase tracking-[0.3em]">Playtest Scope</p>
+        <p>
+          Trades + ideologue L4/L6 powers are disabled; only Media Smear conspiracies work. See
+          <span className="font-semibold"> docs/build_status.md</span> for the full MVP notes.
+        </p>
+      </div>
+
       <form onSubmit={handleIdeologySubmit} className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-500">
           Ideology Card
@@ -118,28 +137,28 @@ export function GameActionPanel({
             <p className="font-semibold text-zinc-900 dark:text-zinc-50">{ideologyCard.prompt}</p>
             <div className="mt-3 space-y-2">
               <label className="flex gap-2">
-                <input
-                  type="radio"
-                  name="ideology-choice"
-                  value="answer_a"
-                  checked={choice === 'answer_a'}
-                  onChange={() => setChoice('answer_a')}
+            <input
+              type="radio"
+              name="ideology-choice"
+              value="answer_a"
+              checked={choice === 'answer_a'}
+              onChange={() => setChoice('answer_a')}
                   disabled={!canAnswer}
-                />
+            />
                 <span>{ideologyCard.answer_a.text}</span>
-              </label>
+          </label>
               <label className="flex gap-2">
-                <input
-                  type="radio"
-                  name="ideology-choice"
-                  value="answer_b"
-                  checked={choice === 'answer_b'}
-                  onChange={() => setChoice('answer_b')}
+            <input
+              type="radio"
+              name="ideology-choice"
+              value="answer_b"
+              checked={choice === 'answer_b'}
+              onChange={() => setChoice('answer_b')}
                   disabled={!canAnswer}
-                />
+            />
                 <span>{ideologyCard.answer_b.text}</span>
-              </label>
-            </div>
+          </label>
+        </div>
           </div>
         ) : (
           <p className="text-xs text-zinc-500">Deck exhausted. Await reshuffle.</p>
@@ -195,12 +214,14 @@ export function GameActionPanel({
 
       <ConspiracySection
         sessionId={sessionId}
+        currentUserId={currentUserId}
         turnId={turnId}
         canAct={canAct}
         turnStatus={turnStatus}
         card={conspiracyCard}
         currentHand={currentHand}
         knownCards={conspiracyCards}
+        players={players}
       />
     </section>
   );
@@ -208,24 +229,35 @@ export function GameActionPanel({
 
 function ConspiracySection({
   sessionId,
+  currentUserId,
   turnId,
   canAct,
   turnStatus,
   card,
   currentHand,
   knownCards,
+  players,
 }: {
   sessionId: string;
+  currentUserId: string;
   turnId: number | null;
   canAct: boolean;
   turnStatus: string;
   card: { id: string; title: string; cost: number; description: string } | null;
   currentHand: string[];
   knownCards: { id: string; title: string; cost: number; description: string }[];
+  players: SessionPlayerRow[];
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [selectedCardId, setSelectedCardId] = useState<string | null>(currentHand[0] ?? null);
+  const [selectedTargetId, setSelectedTargetId] = useState<string>('');
+
+  useEffect(() => {
+    if (!selectedCardId || !currentHand.includes(selectedCardId)) {
+      setSelectedCardId(currentHand[0] ?? null);
+    }
+  }, [currentHand, selectedCardId]);
 
   function buyCard() {
     if (!turnId || !card) return;
@@ -244,8 +276,35 @@ function ConspiracySection({
     });
   }
 
+  const selectedConfig = getConspiracyEffectConfig(selectedCardId);
+  const requiresTarget = Boolean(selectedConfig?.requiresTarget);
+  const targetPool = useMemo(
+    () => players.filter((player) => player.profile_id !== currentUserId),
+    [players, currentUserId],
+  );
+  const isImplemented = selectedConfig?.implemented ?? false;
+
+  useEffect(() => {
+    if (!requiresTarget) {
+      setSelectedTargetId('');
+      return;
+    }
+    if (selectedTargetId && targetPool.some((player) => player.profile_id === selectedTargetId)) {
+      return;
+    }
+    setSelectedTargetId(targetPool[0]?.profile_id ?? '');
+  }, [requiresTarget, selectedTargetId, targetPool]);
+
   function playCard() {
     if (!turnId || !selectedCardId) return;
+    if (requiresTarget && !selectedTargetId) {
+      setMessage('Choose a target player for this conspiracy.');
+      return;
+    }
+    if (!isImplemented) {
+      setMessage('This conspiracy effect is coming soon.');
+      return;
+    }
     setMessage(null);
 
     startTransition(async () => {
@@ -254,6 +313,9 @@ function ConspiracySection({
         payload.set('sessionId', sessionId);
         payload.set('turnId', String(turnId));
         payload.set('cardId', selectedCardId);
+        if (selectedTargetId) {
+          payload.set('targetId', selectedTargetId);
+        }
         await playConspiracyCard(payload);
         setMessage('Conspiracy played.');
       } catch (error) {
@@ -308,10 +370,30 @@ function ConspiracySection({
                 </option>
               ))}
             </select>
+            {selectedConfig?.instructions ? (
+              <p className="text-xs text-zinc-500">{selectedConfig.instructions}</p>
+            ) : null}
+            {requiresTarget ? (
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-[0.3em] text-zinc-500">Target</label>
+                <select
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  value={selectedTargetId}
+                  onChange={(event) => setSelectedTargetId(event.currentTarget.value)}
+                >
+                  <option value="">Choose opponent</option>
+                  {targetPool.map((player) => (
+                    <option key={player.profile_id} value={player.profile_id}>
+                      {player.profiles?.display_name ?? player.profile_id.slice(0, 6)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={playCard}
-              disabled={!selectedCardId || isPending}
+              disabled={!selectedCardId || isPending || (requiresTarget && !selectedTargetId) || !isImplemented}
               className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-200"
             >
               {isPending ? 'Playing…' : 'Play Selected'}

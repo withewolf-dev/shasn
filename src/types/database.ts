@@ -16,6 +16,9 @@ export type SessionPlayerRow = {
   is_ready: boolean;
   resources: Record<string, number> | null;
   conspiracy_hand?: string[];
+  conspiracy_flags?: Record<string, unknown> | null;
+  headline_flags?: Record<string, unknown> | null;
+  ideology_state?: Record<string, number> | null;
   profiles?: {
     display_name: string | null;
     avatar_seed: string | null;

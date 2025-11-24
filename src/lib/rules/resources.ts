@@ -19,6 +19,8 @@ export function normalizeResourceBundle(bundle?: ResourceBundle | null): Resourc
   );
 }
 
+const RESOURCE_ORDER: ResourceType[] = ['funds', 'media', 'clout', 'trust'];
+
 export function addResourceBundles(base: ResourceBundle, delta: ResourceBundle): ResourceBundle {
   const normalizedBase = normalizeResourceBundle(base);
   const normalizedDelta = normalizeResourceBundle(delta);
@@ -64,10 +66,9 @@ export function spendGenericResources(base: ResourceBundle, amount: number): Res
   const normalized = normalizeResourceBundle(base);
   let remaining = amount;
 
-  const resourceOrder: ResourceType[] = ['funds', 'media', 'clout', 'trust'];
   const updated: ResourceBundle = { ...normalized };
 
-  for (const type of resourceOrder) {
+  for (const type of RESOURCE_ORDER) {
     if (remaining <= 0) break;
     const available = updated[type] ?? 0;
     if (available <= 0) continue;
@@ -81,5 +82,43 @@ export function spendGenericResources(base: ResourceBundle, amount: number): Res
   }
 
   return updated;
+}
+
+export function clampResourceBundle(bundle: ResourceBundle): {
+  bundle: ResourceBundle;
+  discarded: ResourceBundle;
+  overflow: number;
+} {
+  const normalized = normalizeResourceBundle(bundle);
+  const total = totalResources(normalized);
+  const overflow = Math.max(0, total - RESOURCE_CAP);
+  if (overflow <= 0) {
+    return { bundle: normalized, discarded: {}, overflow: 0 };
+  }
+
+  let remainingOverflow = overflow;
+  const discarded: ResourceBundle = {};
+  const updated: ResourceBundle = { ...normalized };
+
+  const sortedResources = [...RESOURCE_ORDER].sort(
+    (a, b) => (updated[b] ?? 0) - (updated[a] ?? 0),
+  );
+
+  while (remainingOverflow > 0) {
+    for (const resource of sortedResources) {
+      if (remainingOverflow <= 0) break;
+      const available = updated[resource] ?? 0;
+      if (available <= 0) continue;
+      const amount = Math.min(available, remainingOverflow);
+      updated[resource] = available - amount;
+      discarded[resource] = (discarded[resource] ?? 0) + amount;
+      remainingOverflow -= amount;
+    }
+    if (sortedResources.every((resource) => (updated[resource] ?? 0) === 0)) {
+      break;
+    }
+  }
+
+  return { bundle: updated, discarded, overflow };
 }
 

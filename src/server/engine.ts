@@ -1,6 +1,11 @@
 'use server';
 
-import { addResourceBundles, subtractResourceBundle } from '@/lib/rules';
+import {
+  addResourceBundles,
+  clampResourceBundle,
+  subtractResourceBundle,
+  spendGenericResources,
+} from '@/lib/rules';
 import type { ResourceBundle } from '@/lib/rules';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { drawDeckCards, peekDeckCards } from '@/server/decks';
@@ -29,7 +34,7 @@ export async function resolveIdeologyAnswer({
 
   const { data: playerRow, error: playerError } = await supabase
     .from('session_players')
-    .select('resources')
+    .select('resources, ideology_state')
     .match({ session_id: sessionId, profile_id: playerId })
     .single();
 
@@ -37,11 +42,16 @@ export async function resolveIdeologyAnswer({
     throw new Error(playerError.message);
   }
 
-  const updatedResources = addResourceBundles(playerRow.resources ?? {}, rewards);
+  const gainedResources = addResourceBundles(playerRow.resources ?? {}, rewards);
+  const { bundle: cappedResources, discarded, overflow } = clampResourceBundle(gainedResources);
+  const updatedIdeologyState = incrementIdeologyState(
+    (playerRow.ideology_state as Record<string, number> | null) ?? {},
+    ideology,
+  );
 
   const { error: updateError } = await supabase
     .from('session_players')
-    .update({ resources: updatedResources })
+    .update({ resources: cappedResources, ideology_state: updatedIdeologyState })
     .match({ session_id: sessionId, profile_id: playerId });
 
   if (updateError) {
@@ -56,7 +66,21 @@ export async function resolveIdeologyAnswer({
     payload: { card_id: cardId, choice, rewards, ideology },
   });
 
-  return { resources: updatedResources };
+  if (overflow > 0) {
+    await supabase.from('actions').insert({
+      session_id: sessionId,
+      turn_id: turnId,
+      actor_id: playerId,
+      action_type: 'RESOURCE_CAP_DISCARD',
+      payload: {
+        source: 'ideology_answer',
+        discarded,
+        overflow,
+      },
+    });
+  }
+
+  return { resources: cappedResources };
 }
 
 interface InfluenceVotersInput {
@@ -173,8 +197,10 @@ export async function influenceVoters({
   });
 
   if (headlineTriggered) {
-    await triggerHeadline(sessionId, playerId);
+    await triggerHeadline(sessionId, playerId, supabase);
   }
+
+  await evaluateSessionEndState(supabase, sessionId);
 
   return {
     resources: updatedResources,
@@ -227,12 +253,17 @@ function fillVolatileSlots({
   return { updatedVolatileSlots: filled, headlineTriggered: triggered };
 }
 
-export async function triggerHeadline(sessionId: string, playerId: string) {
-  const supabase = createServerSupabaseClient();
+export async function triggerHeadline(
+  sessionId: string,
+  playerId: string,
+  existingClient?: ReturnType<typeof createServerSupabaseClient>,
+) {
+  const supabase = existingClient ?? createServerSupabaseClient();
   const [headline] = await peekDeckCards<HeadlineCardRow>(sessionId, 'headline', 1);
   if (!headline) return null;
 
   await drawDeckCards(sessionId, 'headline', 1);
+  const result = await applyHeadlineEffect(supabase, sessionId, playerId, headline);
 
   await supabase.from('actions').insert({
     session_id: sessionId,
@@ -244,10 +275,160 @@ export async function triggerHeadline(sessionId: string, playerId: string) {
       title: headline.title,
       effect: headline.effect,
       sentiment: headline.sentiment,
+      result,
     },
   });
 
+  await evaluateSessionEndState(supabase, sessionId);
+
   return headline;
+}
+
+async function applyHeadlineEffect(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+  playerId: string,
+  headline: HeadlineCardRow,
+) {
+  switch (headline.id) {
+    case 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa':
+      await removeGenericResources(supabase, sessionId, playerId, 2);
+      return { type: 'resources_removed', amount: 2 };
+    case 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': {
+      const zoneId = await grantBonusVoter(supabase, sessionId, playerId);
+      return { type: 'bonus_voter', zone_id: zoneId };
+    }
+    case 'cccccccc-cccc-4ccc-8ccc-cccccccccccc':
+      await removeSpecificResource(supabase, sessionId, playerId, 'media', 1);
+      await setHeadlineFlag(supabase, sessionId, playerId, { skip_gerrymander: true });
+      return { type: 'media_loss_and_skip' };
+    case 'dddddddd-dddd-4ddd-8ddd-dddddddddddd': {
+      const zoneId = (await convertOpponentVoter(supabase, sessionId, playerId)) ??
+        (await grantBonusVoter(supabase, sessionId, playerId));
+      return { type: 'convert_voter', zone_id: zoneId };
+    }
+    case 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee':
+      await setHeadlineFlag(supabase, sessionId, playerId, { reveal_hand: true });
+      return { type: 'reveal_hand' };
+    default:
+      return { type: 'logged_only' };
+  }
+}
+
+async function removeGenericResources(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+  playerId: string,
+  amount: number,
+) {
+  const { data } = await supabase
+    .from('session_players')
+    .select('resources')
+    .match({ session_id: sessionId, profile_id: playerId })
+    .single();
+  const updated = spendGenericResources(data?.resources ?? {}, amount);
+  await supabase
+    .from('session_players')
+    .update({ resources: updated })
+    .match({ session_id: sessionId, profile_id: playerId });
+}
+
+async function removeSpecificResource(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+  playerId: string,
+  resource: string,
+  amount: number,
+) {
+  const { data } = await supabase
+    .from('session_players')
+    .select('resources')
+    .match({ session_id: sessionId, profile_id: playerId })
+    .single();
+  const current = { ...(data?.resources ?? {}) };
+  current[resource] = Math.max(0, (current[resource] ?? 0) - amount);
+  await supabase
+    .from('session_players')
+    .update({ resources: current })
+    .match({ session_id: sessionId, profile_id: playerId });
+}
+
+async function setHeadlineFlag(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+  playerId: string,
+  flag: Record<string, unknown>,
+) {
+  const { data } = await supabase
+    .from('session_players')
+    .select('headline_flags')
+    .match({ session_id: sessionId, profile_id: playerId })
+    .single();
+  const updated = { ...(data?.headline_flags ?? {}), ...flag };
+  await supabase
+    .from('session_players')
+    .update({ headline_flags: updated })
+    .match({ session_id: sessionId, profile_id: playerId });
+}
+
+async function grantBonusVoter(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+  playerId: string,
+) {
+  const { data: zones } = await supabase.from('zones').select('*');
+  const { data: controls } = await supabase
+    .from('zone_control')
+    .select('zone_id, voter_counts, majority_owner, gerrymander_uses')
+    .eq('session_id', sessionId);
+
+  for (const zone of zones ?? []) {
+    const zoneControl = controls?.find((row) => row.zone_id === zone.id);
+    const counts = normalizeVoterCounts(zoneControl?.voter_counts);
+    const placed = Object.values(counts).reduce((sum, value) => sum + value, 0);
+    if (placed >= zone.total_voters) continue;
+    counts[playerId] = (counts[playerId] ?? 0) + 1;
+    await supabase.from('zone_control').upsert({
+      session_id: sessionId,
+      zone_id: zone.id,
+      voter_counts: counts,
+      majority_owner: zoneControl?.majority_owner ?? null,
+      gerrymander_uses: zoneControl?.gerrymander_uses ?? 0,
+    });
+    return zone.id;
+  }
+  return null;
+}
+
+async function convertOpponentVoter(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+  playerId: string,
+) {
+  const { data: controls } = await supabase
+    .from('zone_control')
+    .select('zone_id, voter_counts')
+    .eq('session_id', sessionId);
+
+  for (const control of controls ?? []) {
+    const counts = normalizeVoterCounts(control.voter_counts);
+    const targetEntry = Object.entries(counts).find(
+      ([id, count]) => id !== playerId && (count ?? 0) > 0,
+    );
+    if (!targetEntry) continue;
+
+    const [opponentId] = targetEntry;
+    counts[opponentId] = Math.max(0, counts[opponentId] - 1);
+    counts[playerId] = (counts[playerId] ?? 0) + 1;
+
+    await supabase.from('zone_control').upsert({
+      session_id: sessionId,
+      zone_id: control.zone_id,
+      voter_counts: counts,
+    });
+    return control.zone_id;
+  }
+  return null;
 }
 
 export async function formCoalition(sessionId: string, zoneId: string, playerA: string, playerB: string) {
@@ -273,5 +454,84 @@ export async function formCoalition(sessionId: string, zoneId: string, playerA: 
       coalition: { players: [playerA, playerB], split },
     })
     .match({ session_id: sessionId, zone_id: zoneId });
+}
+
+function incrementIdeologyState(
+  state: Record<string, number>,
+  ideology?: string | null,
+): Record<string, number> {
+  if (!ideology) {
+    return state;
+  }
+
+  const next = { ...state };
+  next[ideology] = (next[ideology] ?? 0) + 1;
+  return next;
+}
+
+export async function evaluateSessionEndState(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  sessionId: string,
+) {
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from('sessions')
+    .select('status, host_id')
+    .eq('id', sessionId)
+    .single();
+
+  if (sessionError || !sessionRow) {
+    return;
+  }
+
+  if (['endgame', 'completed', 'cancelled'].includes(sessionRow.status)) {
+    return;
+  }
+
+  const [{ data: zones }, { data: controls }] = await Promise.all([
+    supabase.from('zones').select('id, total_voters, majority_required'),
+    supabase
+      .from('zone_control')
+      .select('zone_id, voter_counts, majority_owner')
+      .eq('session_id', sessionId),
+  ]);
+
+  if (!zones || zones.length === 0) {
+    return;
+  }
+
+  const controlMap = new Map((controls ?? []).map((control) => [control.zone_id, control]));
+
+  const allMajorities = zones.every((zone) => {
+    const control = controlMap.get(zone.id);
+    if (!control || !control.majority_owner) return false;
+    const counts = normalizeVoterCounts(control.voter_counts);
+    return (counts[control.majority_owner] ?? 0) >= zone.majority_required;
+  });
+
+  const boardFull = zones.every((zone) => {
+    const control = controlMap.get(zone.id);
+    if (!control) return false;
+    const counts = normalizeVoterCounts(control.voter_counts);
+    const placed = Object.values(counts).reduce((sum, value) => sum + value, 0);
+    return placed >= zone.total_voters;
+  });
+
+  if (!allMajorities && !boardFull) {
+    return;
+  }
+
+  const reason = allMajorities ? 'all_majorities' : 'board_full';
+
+  await supabase.from('sessions').update({ status: 'endgame' }).eq('id', sessionId);
+
+  if (sessionRow.host_id) {
+    await supabase.from('actions').insert({
+      session_id: sessionId,
+      turn_id: null,
+      actor_id: sessionRow.host_id,
+      action_type: 'SESSION_END_TRIGGERED',
+      payload: { reason },
+    });
+  }
 }
 

@@ -39,10 +39,11 @@ export default async function LobbyPage({ params }: LobbyPageProps) {
           profile_id,
           seat_order,
           is_ready,
-          profiles (
+        profiles (
             display_name,
             avatar_seed
-          )
+        ),
+        ideology_state
         `,
         )
         .eq('session_id', sessionId)
