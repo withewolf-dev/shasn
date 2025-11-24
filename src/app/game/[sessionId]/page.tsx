@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 import { GameRealtimeContainer } from '@/components/game/game-realtime-container';
 import { ensureSessionDecks, peekDeckCards } from '@/server/decks';
 import type {

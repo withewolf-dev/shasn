@@ -6,7 +6,7 @@ import {
   computeIdeologuePassiveIncome,
 } from '@/lib/rules';
 import type { ResourceBundle } from '@/lib/rules';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 import { ensureSessionDecks, peekDeckCards } from '@/server/decks';
 
 export interface StartTurnInput {

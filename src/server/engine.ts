@@ -7,7 +7,7 @@ import {
   spendGenericResources,
 } from '@/lib/rules';
 import type { ResourceBundle } from '@/lib/rules';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 import { drawDeckCards, peekDeckCards } from '@/server/decks';
 import type { HeadlineCardRow } from '@/types/database';
 

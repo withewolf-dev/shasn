@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { ReadyToggle } from '@/components/lobby/ready-toggle';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 interface LobbyPageProps {
   params: Promise<{ sessionId: string }>;

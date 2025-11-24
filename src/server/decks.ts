@@ -1,7 +1,7 @@
 'use server';
 
 import { CONSPIRACY_EFFECTS } from '@/lib/rules';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 import type { DeckType, SessionDeckRow } from '@/types/database';
 
 const DECK_SOURCES: Record<DeckType, { table: string }> = {

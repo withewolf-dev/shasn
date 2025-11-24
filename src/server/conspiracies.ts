@@ -2,7 +2,7 @@
 
 import type { ConspiracyCardRow } from '@/types/database';
 import { CONSPIRACY_EFFECTS } from '@/lib/rules';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 interface ApplyConspiracyEffectInput {
   supabase: ReturnType<typeof createServerSupabaseClient>;

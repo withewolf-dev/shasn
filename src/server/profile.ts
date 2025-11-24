@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export interface UpsertProfileInput {
   displayName: string;

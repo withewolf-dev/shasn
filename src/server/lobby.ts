@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { createServerSupabaseClient, createServiceSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient, createServiceSupabaseClient } from '@/lib/supabase/server-client';
 
 export interface SetReadyStateInput {
   sessionId: string;

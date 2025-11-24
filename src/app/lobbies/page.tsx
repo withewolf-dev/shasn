@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { createLobby } from '@/server/lobby';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export default async function LobbiesPage() {
   const supabase = createServerSupabaseClient();

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { MagicLinkForm } from '@/components/auth/magic-link-form';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export default async function LoginPage() {
   const supabase = createServerSupabaseClient();

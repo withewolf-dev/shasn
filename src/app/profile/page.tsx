@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { ProfileForm } from '@/components/profile/profile-form';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export default async function ProfilePage() {
   const supabase = createServerSupabaseClient();
