@@ -1,20 +1,23 @@
-type EnvKeys =
-  | 'NEXT_PUBLIC_SUPABASE_URL'
-  | 'NEXT_PUBLIC_SUPABASE_ANON_KEY'
-  | 'SUPABASE_SERVICE_ROLE_KEY';
+// Shared env helpers for both server and browser.
+// Use direct property access so Next.js can inline NEXT_PUBLIC_* vars in client bundles.
 
-function readEnv(key: EnvKeys) {
-  const value = process.env[key];
-  if (!value && key !== 'SUPABASE_SERVICE_ROLE_KEY') {
-    throw new Error(`Missing required environment variable: ${key}`);
+function requireEnv(name: 'NEXT_PUBLIC_SUPABASE_URL' | 'NEXT_PUBLIC_SUPABASE_ANON_KEY'): string {
+  const value =
+    name === 'NEXT_PUBLIC_SUPABASE_URL'
+      ? process.env.NEXT_PUBLIC_SUPABASE_URL
+      : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
   }
 
   return value;
 }
 
 export const env = {
-  supabaseUrl: () => readEnv('NEXT_PUBLIC_SUPABASE_URL')!,
-  supabaseAnonKey: () => readEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')!,
-  supabaseServiceRoleKey: () => readEnv('SUPABASE_SERVICE_ROLE_KEY'),
+  supabaseUrl: () => requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+  supabaseAnonKey: () => requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+  supabaseServiceRoleKey: () => process.env.SUPABASE_SERVICE_ROLE_KEY,
 };
+
 

@@ -11,12 +11,12 @@ import type {
 } from '@/types/database';
 
 interface GamePageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;
 }
 
 export default async function GamePage({ params }: GamePageProps) {
   const supabase = createServerSupabaseClient();
-  const sessionId = params.sessionId;
+  const { sessionId } = await params;
 
   const [
     {
